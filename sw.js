@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nopMedCount-2026-11-17-v03';
+const CACHE_NAME = 'nopMedCount-2026-11-17-v04';
 const ASSETS = [
   './',
   './index.html',
@@ -27,8 +27,10 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
   const accept = req.headers.get('accept') || '';
+  const path = new URL(req.url).pathname;
   const isHtml = req.mode === 'navigate' || accept.includes('text/html');
-  if(isHtml){
+  const isManifest = path.endsWith('/manifest.json');
+  if(isHtml || isManifest){
     e.respondWith(
       fetch(req).then(res => {
         const copy = res.clone();
