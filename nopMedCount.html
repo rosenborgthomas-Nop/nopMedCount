@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nopMedCount</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2c333c">
+<link rel="icon" href="icon-192.png">
+<style>
+  /* Neutralt skal. Utseendet tas senare, se protokollet. */
+  :root{
+    --ink:#243040;
+    --paper:#f6f4f0;
+    --line:#d5d0c8;
+    --muted:#5e6872;
+    --btn:#e7e2da;
+    --warn:#7a3e2e;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:#e4e1db;
+    color:var(--ink);
+    font-family:"Segoe UI", sans-serif;
+    min-height:100vh;
+    padding:24px 16px 48px;
+  }
+  .wrap{ max-width:640px; margin:0 auto; }
+  .view[hidden]{ display:none; }
+  h1{ font-size:28px; font-weight:600; margin:0 0 8px; }
+  p{ line-height:1.45; }
+  .quiet{ color:var(--muted); font-size:14px; margin:0 0 16px; }
+  .panel{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px;
+  }
+  .version{ font-size:12px; color:var(--muted); margin:0 0 18px; }
+  button, input{
+    font:inherit;
+    color:inherit;
+  }
+  button{
+    background:var(--btn);
+    border:1px solid #b7b1a8;
+    border-radius:8px;
+    padding:8px 12px;
+    cursor:pointer;
+  }
+  button:disabled{ opacity:0.55; cursor:default; }
+  input{
+    width:100%;
+    border:1px solid #b7b1a8;
+    border-radius:8px;
+    padding:8px 10px;
+    background:#fff;
+  }
+  label{ display:block; font-size:14px; margin:0 0 12px; }
+  .row{ display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  ul{ list-style:none; margin:0 0 16px; padding:0; }
+  li{ margin:0 0 8px; }
+  li button{ width:100%; text-align:left; }
+  .msg{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:10px 12px;
+    margin:0 0 12px;
+    font-size:14px;
+  }
+  .msg.warn{ border-color:var(--warn); color:var(--warn); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="version" id="versionLabel"></p>
+
+  <section id="viewStart" class="view">
+    <h1>nopMedCount</h1>
+    <p class="quiet">Förarbete. Utseende och innehåll kommer senare.</p>
+    <div id="startMessages"></div>
+    <div class="panel">
+      <p class="quiet" id="startStatus"></p>
+      <ul id="postList"></ul>
+      <form id="createForm">
+        <label>Ny post
+          <input id="newName" name="name" autocomplete="off" maxlength="200">
+        </label>
+        <div class="row">
+          <button type="submit">Skapa</button>
+          <button type="button" id="goBackup">Säkerhetskopia</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section id="viewPost" class="view" hidden>
+    <div class="row">
+      <button type="button" id="backStart">Tillbaka</button>
+    </div>
+    <h1 id="postHeading"></h1>
+    <div id="postMessages"></div>
+    <div class="panel">
+      <p class="quiet" id="postStatus"></p>
+      <label>Namn
+        <input id="postName" autocomplete="off" maxlength="200">
+      </label>
+      <p class="quiet">Innehållet är tomt. Det fylls i när appen byggs ut.</p>
+      <div class="row">
+        <button type="button" id="reachFile">Nå filen</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="viewBackup" class="view" hidden>
+    <div class="row">
+      <button type="button" id="backFromBackup">Tillbaka</button>
+    </div>
+    <h1>Säkerhetskopia</h1>
+    <p class="quiet">Programmet startar utan mappfråga. JSON-filerna är den riktiga kopian. Välj en mapp, till exempel i Google Drive. Programfilen behöver inte ligga där. Samma mapp används på datorn och i telefonen.</p>
+    <div id="backupMessages"></div>
+    <div class="panel">
+      <div class="row">
+        <button type="button" id="pickFolder">Välj mapp…</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+const APP_VERSION = '2026-11-17 v02';
+const PROGRAM_FILE_NAME = 'nopMedCount.html';
+const POST_FORMAT = 'nopmedcount-post';
+const POST_FORMAT_VERSION = 1;
+const START_TIMEOUT_MS = 4000;
+
+const NAME_FORBIDDEN = /[\\/:*?"<>|]/;
+const RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+function normalizeProgramFolderHref(href){
+  let h = String(href || '');
+  h = h.split('#')[0].split('?')[0];
+  h = h.replace(/\\/g, '/');
+  try{ h = decodeURI(h); } catch(e){ /* ignore */ }
+  h = h.toLowerCase();
+  if(h.startsWith('file:')){
+    h = h.replace(/^file:\/\/localhost\//, 'file:///');
+    h = h.replace(/^file:\/\/\/+/, 'file:///');
+  }
+  return h;
+}
+
+function programFolderScopeKey(){
+  try{
+    let href = normalizeProgramFolderHref(location.href || 'default');
+    const slash = href.lastIndexOf('/');
+    if(slash >= 0) href = href.slice(0, slash + 1);
+    return href || 'default';
+  } catch(e){
+    return 'default';
+  }
+}
+
+function hashStorageScope(s){
+  let h = 5381;
+  const text = String(s || '');
+  for(let i = 0; i < text.length; i++){
+    h = ((h << 5) + h) ^ text.charCodeAt(i);
+  }
+  return (h >>> 0).toString(36);
+}
+
+const STORAGE_SCOPE = hashStorageScope(programFolderScopeKey());
+const REGISTRY_KEY = 'nopmedcount_posts__' + STORAGE_SCOPE;
+const WORKSPACE_KIND_KEY = 'nopmedcount_workspace_kind__' + STORAGE_SCOPE;
+const POST_PREFIX = 'nopmedcount_post__' + STORAGE_SCOPE + '_';
+const IDB_NAME = 'nopmedcount__' + STORAGE_SCOPE;
+const IDB_STORE = 'handles';
+const WORKSPACE_KEY = 'workspace';
+
+const live = { dir: null, files: Object.create(null) };
+let syncEpoch = 0;
+let reg = emptyRegistry();
+let activeId = '';
+let activePost = null;
+let fileContact = false;
+let nameTimer = 0;
+
+const el = id => document.getElementById(id);
+
+function emptyRegistry(){
+  return { order: [], active: '', names: {}, fileIds: [], nextNum: 1 };
+}
+
+function readRegistry(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(REGISTRY_KEY));
+    if(raw && Array.isArray(raw.order) && raw.names && typeof raw.names === 'object'){
+      if(!Array.isArray(raw.fileIds)) raw.fileIds = [];
+      if(typeof raw.nextNum !== 'number' || raw.nextNum < 1) raw.nextNum = 1;
+      if(typeof raw.active !== 'string') raw.active = '';
+      return raw;
+    }
+  } catch(e){ /* saknas eller skadat */ }
+  return emptyRegistry();
+}
+
+function writeRegistry(next){
+  localStorage.setItem(REGISTRY_KEY, JSON.stringify(next));
+  reg = next;
+}
+
+function postKey(id){ return POST_PREFIX + id; }
+function syncKey(id){ return POST_PREFIX + id + '__filesync'; }
+
+function isFilePost(id){
+  return reg.fileIds.indexOf(id) !== -1;
+}
+
+function hasPending(id){
+  try{ return localStorage.getItem(syncKey(id)) === 'pending'; }
+  catch(e){ return false; }
+}
+
+function markPending(id){
+  try{ localStorage.setItem(syncKey(id), 'pending'); } catch(e){ /* ignore */ }
+}
+
+function clearPending(id){
+  try{ localStorage.removeItem(syncKey(id)); } catch(e){ /* ignore */ }
+}
+
+function readMirror(id){
+  try{
+    const post = JSON.parse(localStorage.getItem(postKey(id)));
+    if(post && typeof post === 'object' && !Array.isArray(post)) return post;
+  } catch(e){ /* ignore */ }
+  return null;
+}
+
+function writeMirror(id, post){
+  localStorage.setItem(postKey(id), JSON.stringify(post));
+}
+
+function nameProblem(name){
+  const n = String(name || '');
+  if(!n.trim()) return 'Namnet får inte vara tomt.';
+  if(/[.\s]$/.test(n)){
+    return 'Namnet får inte sluta med mellanslag eller punkt.';
+  }
+  if(NAME_FORBIDDEN.test(n)){
+    return 'Namnet får inte innehålla \\ / : * ? " < > | — de fungerar inte i filnamn på Windows.';
+  }
+  if(RESERVED_NAMES.test(n)){
+    return 'Namnet är reserverat av Windows och kan inte bli ett filnamn.';
+  }
+  if(n.length > 200) return 'Namnet är för långt.';
+  return '';
+}
+
+function nameTakenBy(name, exceptId){
+  const wanted = String(name || '').toLowerCase();
+  return reg.order.some(id => id !== exceptId
+    && String(reg.names[id] || '').toLowerCase() === wanted);
+}
+
+function fileNameFor(name){
+  return name + '.json';
+}
+
+function allocId(){
+  let n = reg.nextNum || 1;
+  let id = '';
+  do{
+    id = 'p' + n;
+    n += 1;
+  } while(
+    reg.order.indexOf(id) !== -1
+    || reg.names[id]
+    || localStorage.getItem(postKey(id)) !== null
+  );
+  reg.nextNum = n;
+  return id;
+}
+
+function showMessages(node, items){
+  node.textContent = '';
+  (items || []).forEach(item => {
+    const p = document.createElement('p');
+    p.className = 'msg' + (item.warn ? ' warn' : '');
+    p.textContent = item.text;
+    node.appendChild(p);
+  });
+}
+
+function show(name){
+  ['viewStart', 'viewPost', 'viewBackup'].forEach(id => {
+    el(id).hidden = id !== name;
+  });
+  if(name === 'viewStart') renderStart();
+  if(name === 'viewPost') renderPost();
+}
+
+function renderStart(){
+  const list = el('postList');
+  list.textContent = '';
+  if(!reg.order.length){
+    const li = document.createElement('li');
+    li.textContent = 'Inga poster ännu.';
+    list.appendChild(li);
+  }
+  reg.order.forEach(id => {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = reg.names[id] || id;
+    btn.addEventListener('click', () => openPost(id, true));
+    li.appendChild(btn);
+    list.appendChild(li);
+  });
+  const bits = [];
+  if(live.dir){
+    const folder = live.dir.name ? ('mappen ' + live.dir.name) : 'den valda mappen';
+    bits.push('JSON-filerna ligger i ' + folder + '. Samma mapp används på datorn och i telefonen.');
+  } else {
+    bits.push('Ingen mapp vald. Posterna ligger som arbetskopia tills du väljer mapp.');
+  }
+  el('startStatus').textContent = bits.join(' ');
+}
+
+function renderPost(){
+  const name = reg.names[activeId] || '';
+  el('postHeading').textContent = name;
+  el('postName').value = name;
+  const filePost = isFilePost(activeId);
+  const locked = filePost && !fileContact;
+  el('postName').disabled = locked;
+  el('reachFile').hidden = !filePost || fileContact;
+  if(!filePost){
+    el('postStatus').textContent = 'Arbetskopia i webbläsaren. Inte sparad till fil ännu.';
+  } else if(!fileContact){
+    el('postStatus').textContent = 'Ingen kontakt med filen — endast läsning tills kontakten finns igen.';
+  } else if(hasPending(activeId)){
+    el('postStatus').textContent = 'Osynkad arbetskopia. Filen skrivs när kontakten finns igen.';
+  } else {
+    el('postStatus').textContent = 'Sparad som ' + fileNameFor(name) + '.';
+  }
+}
+
+function setActive(id){
+  activeId = id || '';
+  reg.active = activeId;
+  writeRegistry(reg);
+}
+
+function openIdb(){
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(IDB_STORE); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function idbGet(key){
+  return openIdb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  }));
+}
+
+function idbPut(key, value){
+  return openIdb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  }));
+}
+
+async function ensureHandlePermission(handle, interactive, mode){
+  if(!handle || typeof handle.queryPermission !== 'function') return false;
+  const want = mode || 'readwrite';
+  const ask = (interactive && want === 'read') ? 'readwrite' : want;
+  try{
+    const qAsk = await handle.queryPermission({ mode: ask });
+    if(qAsk === 'granted') return true;
+    if(ask === 'readwrite'){
+      const qRead = await handle.queryPermission({ mode: 'read' });
+      if(qRead === 'granted'){
+        if(!interactive) return want === 'read';
+        const r1 = await handle.requestPermission({ mode: 'readwrite' });
+        return r1 === 'granted';
+      }
+    }
+    if(!interactive) return false;
+    const r2 = await handle.requestPermission({ mode: ask });
+    return r2 === 'granted';
+  } catch(e){
+    return false;
+  }
+}
+
+async function requestPersistentStorage(){
+  try{
+    if(!navigator.storage || typeof navigator.storage.persist !== 'function') return false;
+    if(typeof navigator.storage.persisted === 'function' && await navigator.storage.persisted()){
+      return true;
+    }
+    return await navigator.storage.persist();
+  } catch(e){
+    return false;
+  }
+}
+
+async function directoryContainsProgram(dir){
+  try{
+    await dir.getFileHandle(PROGRAM_FILE_NAME);
+    return true;
+  } catch(e){
+    if(!e || e.name !== 'NotFoundError') return false;
+  }
+  try{
+    const wanted = PROGRAM_FILE_NAME.toLowerCase();
+    for await (const [entryName, handle] of dir.entries()){
+      if(handle.kind === 'file' && String(entryName).toLowerCase() === wanted) return true;
+    }
+  } catch(e){ /* ignore */ }
+  return false;
+}
+
+function getWorkspaceKind(){
+  try{
+    const k = localStorage.getItem(WORKSPACE_KIND_KEY);
+    return (k === 'program' || k === 'books') ? k : '';
+  } catch(e){
+    return '';
+  }
+}
+
+function setWorkspaceKind(kind){
+  try{
+    if(kind === 'program' || kind === 'books') localStorage.setItem(WORKSPACE_KIND_KEY, kind);
+    else localStorage.removeItem(WORKSPACE_KIND_KEY);
+  } catch(e){ /* ignore */ }
+}
+
+async function detectWorkspaceKind(dir){
+  if(dir && await directoryContainsProgram(dir)) return 'program';
+  return 'books';
+}
+
+function withTimeout(promise, ms, fallback){
+  return new Promise(resolve => {
+    let done = false;
+    const timer = setTimeout(() => {
+      if(done) return;
+      done = true;
+      resolve(fallback);
+    }, ms);
+    promise.then(value => {
+      if(done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(value);
+    }, () => {
+      if(done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(fallback);
+    });
+  });
+}
+
+function payloadFor(post, name){
+  return {
+    format: POST_FORMAT,
+    version: POST_FORMAT_VERSION,
+    name: name,
+    savedAt: Date.now(),
+    post: post
+  };
+}
+
+function postFromRaw(raw){
+  if(!raw || raw.format !== POST_FORMAT || !raw.post || typeof raw.post !== 'object' || Array.isArray(raw.post)){
+    throw new Error('Postfilen innehåller inte någon post.');
+  }
+  if(typeof raw.name !== 'string' || nameProblem(raw.name)){
+    throw new Error('Postfilen innehåller inte någon post.');
+  }
+  return { name: raw.name, post: JSON.parse(JSON.stringify(raw.post)) };
+}
+
+async function readHandle(handle){
+  let file;
+  try{
+    file = await handle.getFile();
+  } catch(e){
+    throw new Error('Saknar behörighet att läsa postfilen. Tillåt åtkomst när webbläsaren frågar.');
+  }
+  const text = await file.text();
+  let raw;
+  try{
+    raw = JSON.parse(text);
+  } catch(e){
+    throw new Error('Postfilen går inte att läsa — innehållet är skadat.');
+  }
+  return postFromRaw(raw);
+}
+
+async function writeHandle(handle, post, name){
+  const writable = await handle.createWritable();
+  try{
+    await writable.write(JSON.stringify(payloadFor(post, name), null, 2));
+    await writable.close();
+  } catch(e){
+    try{ await writable.abort(); } catch(ignore){ /* ignore */ }
+    throw e;
+  }
+}
+
+async function entryExists(dir, fileName){
+  try{
+    return await dir.getFileHandle(fileName);
+  } catch(e){
+    if(e && e.name === 'NotFoundError') return null;
+    throw e;
+  }
+}
+
+async function sameEntry(a, b){
+  if(!a || !b) return false;
+  if(a === b) return true;
+  if(typeof a.isSameEntry === 'function'){
+    try{ return await a.isSameEntry(b); } catch(e){ return false; }
+  }
+  return false;
+}
+
+async function getWorkspaceDir(interactive){
+  if(live.dir && await ensureHandlePermission(live.dir, false, interactive ? 'readwrite' : 'read')){
+    if(interactive) await ensureHandlePermission(live.dir, true, 'readwrite');
+    return live.dir;
+  }
+  const stored = await idbGet(WORKSPACE_KEY);
+  if(!stored) return null;
+  const ok = await ensureHandlePermission(stored, interactive, interactive ? 'readwrite' : 'read');
+  if(!ok) return null;
+  live.dir = stored;
+  return stored;
+}
+
+async function getPostHandle(id, interactive){
+  const remembered = live.files[id];
+  if(remembered && await ensureHandlePermission(remembered, interactive, 'readwrite')){
+    return remembered;
+  }
+  const stored = await idbGet(id);
+  if(stored && await ensureHandlePermission(stored, interactive, 'readwrite')){
+    live.files[id] = stored;
+    return stored;
+  }
+  const dir = await getWorkspaceDir(interactive);
+  if(!dir) throw new Error('Kan inte hitta postens fil.');
+  const existing = await entryExists(dir, fileNameFor(reg.names[id] || ''));
+  if(!existing) throw new Error('Kan inte hitta postens fil.');
+  if(!(await ensureHandlePermission(existing, interactive, 'readwrite'))){
+    throw new Error('Saknar behörighet att läsa postfilen. Tillåt åtkomst när webbläsaren frågar.');
+  }
+  await idbPut(id, existing);
+  live.files[id] = existing;
+  return existing;
+}
+
+async function savePost(id, post, name){
+  const previous = reg.names[id];
+  writeMirror(id, post);
+  if(!isFilePost(id) && !live.dir){
+    reg.names[id] = name;
+    writeRegistry(reg);
+    markPending(id);
+    return true;
+  }
+  try{
+    const dir = await getWorkspaceDir(false);
+    if(!dir) throw new Error('Ingen kontakt med mappen.');
+    if(!(await ensureHandlePermission(dir, false, 'readwrite'))){
+      throw new Error('Ingen kontakt med mappen.');
+    }
+    let handle = live.files[id] || await idbGet(id);
+    const wanted = fileNameFor(name);
+    let written = false;
+    if(handle && handle.name && handle.name !== wanted){
+      const clash = await entryExists(dir, wanted);
+      if(clash && !(await sameEntry(clash, handle))){
+        throw new Error('Filen ' + wanted + ' finns redan och lämnades orörd.');
+      }
+      if(typeof handle.move === 'function'){
+        await handle.move(wanted);
+      } else {
+        const created = clash || await dir.getFileHandle(wanted, { create: true });
+        await writeHandle(created, post, name);
+        written = true;
+        if(handle.name && handle.name !== wanted){
+          try{ await dir.removeEntry(handle.name); } catch(ignore){ /* gamla filen får ligga */ }
+        }
+        handle = created;
+      }
+    }
+    if(!handle){
+      const clash = await entryExists(dir, wanted);
+      if(clash) throw new Error('Filen ' + wanted + ' finns redan och lämnades orörd.');
+      handle = await dir.getFileHandle(wanted, { create: true });
+    }
+    if(!written) await writeHandle(handle, post, name);
+    await idbPut(id, handle);
+    live.files[id] = handle;
+    reg.names[id] = name;
+    if(reg.fileIds.indexOf(id) === -1) reg.fileIds.push(id);
+    writeRegistry(reg);
+    clearPending(id);
+    fileContact = true;
+    return true;
+  } catch(e){
+    if(previous) reg.names[id] = previous;
+    writeRegistry(reg);
+    markPending(id);
+    if(isFilePost(id)) fileContact = false;
+    return false;
+  }
+}
+
+async function createPost(name){
+  const problem = nameProblem(name);
+  if(problem) return { id: '', warning: problem };
+  if(nameTakenBy(name, '')) return { id: '', warning: 'Det finns redan en post med det namnet.' };
+  const id = allocId();
+  reg.order.push(id);
+  reg.names[id] = name;
+  writeRegistry(reg);
+  const post = {};
+  writeMirror(id, post);
+  markPending(id);
+  activeId = id;
+  activePost = post;
+  reg.active = id;
+  writeRegistry(reg);
+  if(live.dir){
+    const ok = await savePost(id, post, name);
+    if(!ok) return { id: id, warning: 'Posten skapades här, men filen kunde inte skrivas.' };
+  }
+  return { id: id, warning: '' };
+}
+
+async function openPost(id, interactive){
+  if(reg.order.indexOf(id) === -1){
+    showMessages(el('startMessages'), [{ text: 'Posten finns inte i registret.', warn: true }]);
+    show('viewStart');
+    return;
+  }
+  setActive(id);
+  activePost = readMirror(id);
+  fileContact = false;
+  if(isFilePost(id)){
+    try{
+      const handle = await getPostHandle(id, interactive);
+      const parsed = await readHandle(handle);
+      if(parsed.name !== reg.names[id] && !nameTakenBy(parsed.name, id) && !nameProblem(parsed.name)){
+        reg.names[id] = parsed.name;
+        writeRegistry(reg);
+      }
+      activePost = parsed.post;
+      writeMirror(id, activePost);
+      fileContact = true;
+      clearPending(id);
+      showMessages(el('postMessages'), []);
+    } catch(e){
+      fileContact = false;
+      const text = (e && e.message) ? e.message : 'Postfilen går inte att läsa.';
+      if(!activePost){
+        showMessages(el('startMessages'), [{ text: text + ' Filen lämnades orörd.', warn: true }]);
+        show('viewStart');
+        return;
+      }
+      showMessages(el('postMessages'), [{ text: text + ' Filen lämnades orörd.', warn: true }]);
+    }
+  } else {
+    if(!activePost) activePost = {};
+    showMessages(el('postMessages'), []);
+  }
+  show('viewPost');
+}
+
+async function reconcile(dir, epoch){
+  const warnings = [];
+  const onDisk = Object.create(null);
+  const found = [];
+  for await (const [entryName, handle] of dir.entries()){
+    if(epoch !== syncEpoch) return [];
+    if(handle.kind !== 'file') continue;
+    if(!String(entryName).toLowerCase().endsWith('.json')) continue;
+    onDisk[String(entryName).toLowerCase()] = true;
+    let parsed;
+    try{
+      parsed = await readHandle(handle);
+    } catch(e){
+      warnings.push(entryName + ' lämnades orörd. ' + ((e && e.message) || 'Den går inte att läsa.'));
+      continue;
+    }
+    found.push({ handle: handle, parsed: parsed });
+  }
+  if(epoch !== syncEpoch) return [];
+  const seen = Object.create(null);
+  for(const item of found){
+    if(epoch !== syncEpoch) return [];
+    const parsed = item.parsed;
+    seen[fileNameFor(parsed.name).toLowerCase()] = true;
+    const existing = reg.order.find(id => String(reg.names[id] || '').toLowerCase() === parsed.name.toLowerCase());
+    if(existing){
+      await idbPut(existing, item.handle);
+      live.files[existing] = item.handle;
+      if(reg.fileIds.indexOf(existing) === -1) reg.fileIds.push(existing);
+      continue;
+    }
+    const id = allocId();
+    reg.order.push(id);
+    reg.names[id] = parsed.name;
+    reg.fileIds.push(id);
+    writeMirror(id, parsed.post);
+    clearPending(id);
+    await idbPut(id, item.handle);
+    live.files[id] = item.handle;
+  }
+  if(epoch !== syncEpoch) return [];
+  reg.fileIds = reg.fileIds.filter(id => {
+    const fileName = fileNameFor(reg.names[id] || '').toLowerCase();
+    return !!onDisk[fileName] || !!seen[fileName];
+  });
+  writeRegistry(reg);
+  return warnings;
+}
+
+async function startupSync(epoch){
+  const stored = await idbGet(WORKSPACE_KEY);
+  if(!stored || epoch !== syncEpoch) return { scanned: false, warnings: [] };
+  const ok = await ensureHandlePermission(stored, false, 'read');
+  if(!ok || epoch !== syncEpoch) return { scanned: false, warnings: [] };
+  if(epoch !== syncEpoch) return { scanned: false, warnings: [] };
+  live.dir = stored;
+  const warnings = await reconcile(stored, epoch);
+  return { scanned: true, warnings: warnings };
+}
+
+async function pickFolder(){
+  if(typeof window.showDirectoryPicker !== 'function'){
+    showMessages(el('backupMessages'), [{
+      text: 'Den här webbläsaren kan inte skriva filer till en mapp. Arbetskopian ligger kvar här.',
+      warn: true
+    }]);
+    return;
+  }
+  const dir = await window.showDirectoryPicker({
+    id: 'nopmedcount-workspace-' + STORAGE_SCOPE,
+    mode: 'readwrite',
+    startIn: 'documents'
+  });
+  syncEpoch += 1;
+  const epoch = syncEpoch;
+  live.dir = dir;
+  setWorkspaceKind(await detectWorkspaceKind(dir));
+  await idbPut(WORKSPACE_KEY, dir);
+  await requestPersistentStorage();
+  const warnings = await reconcile(dir, epoch);
+  const notes = warnings.slice();
+  for(const id of reg.order.slice()){
+    if(isFilePost(id) && !hasPending(id)) continue;
+    const post = readMirror(id) || {};
+    const ok = await savePost(id, post, reg.names[id]);
+    if(!ok) notes.push((reg.names[id] || id) + ' skrevs inte. Arbetskopian finns kvar.');
+  }
+  if(!notes.length) notes.push('Posterna är skrivna till mappen.');
+  showMessages(el('backupMessages'), notes.map(text => ({ text: text, warn: text.indexOf('lämnades') !== -1 || text.indexOf('skrevs inte') !== -1 })));
+}
+
+el('versionLabel').textContent = 'version: ' + APP_VERSION;
+
+el('createForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const name = el('newName').value;
+  const result = await createPost(name);
+  if(!result.id){
+    showMessages(el('startMessages'), [{ text: result.warning, warn: true }]);
+    renderStart();
+    return;
+  }
+  el('newName').value = '';
+  showMessages(el('startMessages'), []);
+  show('viewPost');
+  if(result.warning){
+    showMessages(el('postMessages'), [{ text: result.warning, warn: true }]);
+  }
+});
+
+el('goBackup').addEventListener('click', () => {
+  showMessages(el('backupMessages'), []);
+  show('viewBackup');
+});
+
+el('backStart').addEventListener('click', () => show('viewStart'));
+el('backFromBackup').addEventListener('click', () => show('viewStart'));
+
+el('postName').addEventListener('input', () => {
+  clearTimeout(nameTimer);
+  nameTimer = setTimeout(() => commitName(false), 400);
+});
+el('postName').addEventListener('blur', () => {
+  clearTimeout(nameTimer);
+  commitName(true);
+});
+
+async function commitName(revert){
+  if(!activeId || el('postName').disabled) return;
+  const next = el('postName').value;
+  const current = reg.names[activeId] || '';
+  if(next === current) return;
+  const problem = nameProblem(next) || (nameTakenBy(next, activeId) ? 'Det finns redan en post med det namnet.' : '');
+  if(problem){
+    showMessages(el('postMessages'), [{ text: problem, warn: true }]);
+    if(revert) el('postName').value = current;
+    return;
+  }
+  const ok = await savePost(activeId, activePost || {}, next);
+  if(!ok){
+    showMessages(el('postMessages'), [{
+      text: 'Namnet kunde inte skrivas till filen. Arbetskopian finns kvar.',
+      warn: true
+    }]);
+  } else {
+    showMessages(el('postMessages'), []);
+  }
+  renderPost();
+}
+
+el('reachFile').addEventListener('click', async () => {
+  if(!activeId) return;
+  try{
+    const handle = await getPostHandle(activeId, true);
+    const parsed = await readHandle(handle);
+    activePost = parsed.post;
+    writeMirror(activeId, activePost);
+    fileContact = true;
+    clearPending(activeId);
+    showMessages(el('postMessages'), []);
+  } catch(e){
+    fileContact = false;
+    showMessages(el('postMessages'), [{
+      text: ((e && e.message) || 'Kunde inte nå filen.') + ' Filen lämnades orörd.',
+      warn: true
+    }]);
+  }
+  renderPost();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible'){
+    const epoch = syncEpoch;
+    startupSync(epoch).then(result => {
+      if(result && result.warnings && result.warnings.length){
+        showMessages(el('startMessages'), result.warnings.map(text => ({ text: text, warn: true })));
+      }
+    }).catch(() => {});
+  }
+});
+
+async function init(){
+  reg = readRegistry();
+  let result = { scanned: false, warnings: [] };
+  try{
+    await openIdb();
+    const epoch = syncEpoch;
+    result = await withTimeout(startupSync(epoch), START_TIMEOUT_MS, { scanned: false, warnings: [], timedOut: true });
+    if(result.timedOut) syncEpoch += 1;
+  } catch(e){ /* visa programmet ändå */ }
+  reg = readRegistry();
+  const notes = (result.warnings || []).slice();
+  if(result.timedOut) notes.push('Filkontrollen tog för lång tid. Programmet visas ändå.');
+  if(notes.length) showMessages(el('startMessages'), notes.map(text => ({ text: text, warn: true })));
+  if(reg.active && reg.order.indexOf(reg.active) !== -1){
+    await openPost(reg.active, false);
+    return;
+  }
+  show('viewStart');
+}
+
+init();
+})();
+</script>
+<script>
+if('serviceWorker' in navigator){
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if(refreshing) return;
+    refreshing = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    const check = () => { try{ reg.update(); }catch(err){} };
+    check();
+    document.addEventListener('visibilitychange', () => {
+      if(document.visibilityState === 'visible') check();
+    });
+  }).catch(() => {});
+}
+</script>
+</body>
+</html>

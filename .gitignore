@@ -1,0 +1,9 @@
+# Publiceras: nopMedCount.html, sw.js, manifest.json, icon-*.png
+
+# Personlig data (JSON-poster). manifest.json ska med.
+*.json
+!manifest.json
+
+# Planering och protokoll stannar lokalt, som i MSMoney
+Teknikprompt.md
+Protokoll över idéer och beslut.md
