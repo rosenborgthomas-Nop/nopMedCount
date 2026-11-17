@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nopMedCount-2026-11-17-v08';
+const CACHE_NAME = 'nopMedCount-2026-11-17-v09';
 const ASSETS = [
   './',
   './index.html',

@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MEDICIN</title>
+<title>nopMedCount</title>
 <link rel="manifest" href="manifest.json?v=3">
 <script>
 if(location.pathname.toLowerCase().indexOf('/nopmedcount/') !== -1){
-  document.documentElement.innerHTML = '<head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Fel länk</title></head><body style="font-family:sans-serif;padding:24px;font-size:28px;line-height:1.4"><p>Det här är den gamla länken. Den är låst i telefonen.</p><p><a href="https://rosenborgthomas-nop.github.io/nopmed/">Öppna MEDICIN</a></p></body>';
+  document.documentElement.innerHTML = '<head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Fel länk</title></head><body style="font-family:sans-serif;padding:24px;font-size:28px;line-height:1.4"><p>Det här är den gamla länken. Den är låst i telefonen.</p><p><a href="https://rosenborgthomas-nop.github.io/nopmed/">Öppna nopMedCount</a></p></body>';
 }
 </script>
 <meta name="theme-color" content="#2c333c">
@@ -81,15 +81,8 @@ if(location.pathname.toLowerCase().indexOf('/nopmedcount/') !== -1){
 <body>
 <div class="wrap">
   <p class="version" id="versionLabel"></p>
-  <div class="panel" id="installHelp">
-    <h1>MEDICIN</h1>
-    <p>Den interna adressen fungerar inte på telefonen. Den finns bara på en dator.</p>
-    <button type="button" id="installBtn">Lägg MEDICIN på hemskärmen</button>
-    <p class="quiet" id="installStatus">Om inget händer: tryck på de tre prickarna, scrolla förbi Ny flik, och välj Installera app eller Lägg till på startskärmen.</p>
-  </div>
-
   <section id="viewStart" class="view">
-    <h1>MEDICIN</h1>
+    <h1>nopMedCount</h1>
     <div id="startMessages"></div>
     <div class="panel">
       <p class="quiet" id="startStatus"></p>
@@ -143,7 +136,7 @@ if(location.pathname.toLowerCase().indexOf('/nopmedcount/') !== -1){
 (function(){
 'use strict';
 
-const APP_VERSION = '2026-11-17 v08';
+const APP_VERSION = '2026-11-17 v09';
 const PROGRAM_FILE_NAME = 'nopMedCount.html';
 const POST_FORMAT = 'nopmedcount-post';
 const POST_FORMAT_VERSION = 1;
@@ -801,27 +794,6 @@ async function pickFolder(){
 }
 
 el('versionLabel').textContent = 'version: ' + APP_VERSION;
-
-let installEvent = null;
-window.addEventListener('beforeinstallprompt', e => {
-  e.preventDefault();
-  installEvent = e;
-  const status = el('installStatus');
-  if(status) status.textContent = 'Tryck på knappen ovan.';
-});
-const installBtn = el('installBtn');
-if(installBtn){
-  installBtn.addEventListener('click', async () => {
-    const status = el('installStatus');
-    if(!installEvent){
-      if(status) status.textContent = 'Chrome bjöd inte in till installation. Öppna de tre prickarna, scrolla förbi Ny flik, och välj Installera app eller Lägg till på startskärmen.';
-      return;
-    }
-    installEvent.prompt();
-    try{ await installEvent.userChoice; } catch(e){ /* stängd ruta */ }
-    installEvent = null;
-  });
-}
 
 el('createForm').addEventListener('submit', async e => {
   e.preventDefault();

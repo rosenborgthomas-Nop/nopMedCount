@@ -1,6 +1,6 @@
 {
-  "name": "MEDICIN",
-  "short_name": "MEDICIN",
+  "name": "nopMedCount",
+  "short_name": "nopMedCount",
   "description": "Medicinprogram",
   "id": "./medicin",
   "start_url": "./nopMedCount.html",
