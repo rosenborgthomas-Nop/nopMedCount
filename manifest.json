@@ -1,8 +1,8 @@
 {
-  "name": "nopMedCount",
-  "short_name": "nopMedCount",
+  "name": "MEDICIN",
+  "short_name": "MEDICIN",
   "description": "Medicinprogram",
-  "id": "./app",
+  "id": "./medicin",
   "start_url": "./nopMedCount.html",
   "scope": "./",
   "display": "standalone",

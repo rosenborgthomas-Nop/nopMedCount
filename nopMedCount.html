@@ -3,8 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>nopMedCount</title>
-<link rel="manifest" href="manifest.json?v=2">
+<title>MEDICIN</title>
+<link rel="manifest" href="manifest.json?v=3">
+<script>
+if(location.pathname.toLowerCase().indexOf('/nopmedcount/') !== -1){
+  document.documentElement.innerHTML = '<head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Fel länk</title></head><body style="font-family:sans-serif;padding:24px;font-size:28px;line-height:1.4"><p>Det här är den gamla länken. Den är låst i telefonen.</p><p><a href="https://rosenborgthomas-nop.github.io/nopmed/">Öppna MEDICIN</a></p></body>';
+}
+</script>
 <meta name="theme-color" content="#2c333c">
 <link rel="icon" href="icon-192.png">
 <style>
@@ -78,7 +83,7 @@
   <p class="version" id="versionLabel"></p>
 
   <section id="viewStart" class="view">
-    <h1>nopMedCount</h1>
+    <h1>MEDICIN</h1>
     <p class="quiet">Förarbete. Utseende och innehåll kommer senare.</p>
     <div id="startMessages"></div>
     <div class="panel">
@@ -133,7 +138,7 @@
 (function(){
 'use strict';
 
-const APP_VERSION = '2026-11-17 v04';
+const APP_VERSION = '2026-11-17 v05';
 const PROGRAM_FILE_NAME = 'nopMedCount.html';
 const POST_FORMAT = 'nopmedcount-post';
 const POST_FORMAT_VERSION = 1;
