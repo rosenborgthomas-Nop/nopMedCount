@@ -81,10 +81,17 @@ if(location.pathname.toLowerCase().indexOf('/nopmedcount/') !== -1){
 <body>
 <div class="wrap">
   <p class="version" id="versionLabel"></p>
+  <div class="panel" id="installHelp">
+    <h1>MEDICIN</h1>
+    <p>Telefonen säger att appen redan är installerad. Ikonen ligger på hemskärmen, inte i applistan.</p>
+    <p>Svep åt sidan på hemskärmen. Titta på varje sida och i mapparna. Ikonen kan ha ett litet Chrome-märke.</p>
+    <p>Eller: tryck på de tre prickarna här. Tryck på <b>Öppna</b> högst upp i menyn.</p>
+    <button type="button" id="copyWebapks">Kopiera sökadressen</button>
+    <p class="quiet">Klistra in den i adressfältet. Då visas en lista över installerade appar.</p>
+  </div>
 
   <section id="viewStart" class="view">
     <h1>MEDICIN</h1>
-    <p class="quiet">Förarbete. Utseende och innehåll kommer senare.</p>
     <div id="startMessages"></div>
     <div class="panel">
       <p class="quiet" id="startStatus"></p>
@@ -138,7 +145,7 @@ if(location.pathname.toLowerCase().indexOf('/nopmedcount/') !== -1){
 (function(){
 'use strict';
 
-const APP_VERSION = '2026-11-17 v05';
+const APP_VERSION = '2026-11-17 v06';
 const PROGRAM_FILE_NAME = 'nopMedCount.html';
 const POST_FORMAT = 'nopmedcount-post';
 const POST_FORMAT_VERSION = 1;
@@ -796,6 +803,19 @@ async function pickFolder(){
 }
 
 el('versionLabel').textContent = 'version: ' + APP_VERSION;
+
+const copyWebapks = el('copyWebapks');
+if(copyWebapks){
+  copyWebapks.addEventListener('click', async () => {
+    const address = 'chrome://webapks';
+    try{
+      await navigator.clipboard.writeText(address);
+      copyWebapks.textContent = 'Kopierad. Klistra in i adressfältet.';
+    } catch(e){
+      copyWebapks.textContent = address;
+    }
+  });
+}
 
 el('createForm').addEventListener('submit', async e => {
   e.preventDefault();
